@@ -24,7 +24,8 @@ using namespace std;
 void pi0InvM() {
     const Double_t z_calo = 8.14; // position of calorimeter from the target in m
     const Double_t z_target = 0.0;    // position of target
-    const Double_t vertex_z = z_calo - z_target;  // position of vertex, where the pi0 is created, right in the middle of the target
+    const Double_t z_orign = 0.09 ;   // from the center of the target to the gamma gamma vertex
+    const Double_t vertex_z = z_calo - z_target - z_orign;  // position of vertex, where the pi0 is created, right in the middle of the target
 
     TChain *ch = new TChain("T");
 
@@ -72,14 +73,14 @@ void pi0InvM() {
         //h_xy->Fill(ecal_x[1], ecal_y[1]);
         if (nclus != 2) continue;
         if ((ecal_e[0] + ecal_e[1]) < 1.0) continue;
-        if (ecal_e[0] < 0.1 || ecal_e[1] < 0.1) continue;    // Minimum cluster energy cut Tune the 0.2 GeV threshold based on your noise level.
+        if (ecal_e[0] < 0.2 || ecal_e[1] < 0.2) continue;    // Minimum cluster energy cut Tune the 0.2 GeV threshold based on your noise level.
         if (clus_nblk[0] < 2 || clus_nblk[1] < 2) continue;  // Minimum number of blocks per cluster
         
         //if (clus_nblk[0] < 2 || clus_nblk[1] < 2) continue; // Require at least 2 blocks per cluster
         //if (clus_eblk[0] < 0.05 || clus_eblk[1] < 0.05) continue; // Require significant energy in the highest-energy block
 
         Double_t deltaR = sqrt(pow(ecal_x[0] - ecal_x[1], 2) + pow(ecal_y[0] - ecal_y[1], 2));
-        if (deltaR < 0.05) continue; // reject overlapping clusters
+        if (deltaR < 0.07) continue; // reject overlapping clusters
 
         //cout << "Processing event " << i << "\r";
         if (i % 1000 == 0) cout << "Processing event " << i << " / " << nEvents << endl;
@@ -99,22 +100,21 @@ void pi0InvM() {
         Double_t pi0_mass = (ph1 + ph2).M();
 
         Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-        if (opening_angle < 6 || opening_angle > 60) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+        if (opening_angle < 4 || opening_angle > 7.5) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                 // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
 
 
-        if ((ph1 + ph2).M() <= 0.6 && (ph1 + ph2).M() >= 0.06  )
+        if ((ph1 + ph2).M() <= 0.4 && (ph1 + ph2).M() >= 0.06)
             { // cuts to ensure some quality and avoid bugs (inf, -nan)
                 //cuts in time
-                if (clus_a_time[0] > 100 && clus_a_time[0] < 300 && 
-                    clus_a_time[1] > 100 && clus_a_time[1] < 300 && 
+                if (clus_a_time[0] > 180 && clus_a_time[0] < 220 && 
+                    clus_a_time[1] > 180 && clus_a_time[1] < 220 && 
                     fabs(clus_a_time[0] - clus_a_time[1]) < 10) { // difference in time < 4 ns
                     h_pi0_mass->Fill(pi0_mass);
                     h_photons_time->Fill(clus_a_time[0], clus_a_time[1]);
                     h_opening_angle->Fill(opening_angle);
                     h_xy->Fill(ecal_x[0], ecal_y[0]);
-                    h_xy->Fill(ecal_x[1], ecal_y[1]);
-                    
+                    h_xy->Fill(ecal_x[1], ecal_y[1]);       
                 }
                 
             }
