@@ -29,7 +29,7 @@ void pi0InvM() {
     TChain *ch = new TChain("T");
 
     string path = "/volatile/halla/sbs/sbs-gep/GEP_REPLAYS/GEP1/LH2/prod_realign_lowcur_April28/rootfiles/";
-    ifstream infile("runfiles_3173_to_3192.txt");
+    ifstream infile("lists_runs/runfiles_3173_to_3192.txt");
     string filename;
 
     while (getline(infile, filename)) {
