@@ -25,12 +25,14 @@
 
 using namespace std;
 
-// run the script with "root -l pi0InvM.C"
+// 
+// run the script with "root -l ecal_pi0calib.C"
 
 void ecal_pi0calib() {
     const Double_t z_calo = 8.14; // position of calorimeter from the target in m
-    const Double_t z_target = 0.0;    // position of target
-    const Double_t vertex_z = z_calo - z_target;  // position of vertex, where the pi0 is created, right in the middle of the target
+    const Double_t z_target = 0.09;    // position of target
+    const Double_t z_origin = 0.0;
+    const Double_t vertex_z = z_target - z_origin;  // position of vertex, where the pi0 is created, right in the middle of the target
 
     const int nbclusmax=100;// maximum number of clusters
     const int sizemax=1000;// maximum size of the cluster (how many blocks in each cluster)
@@ -81,8 +83,8 @@ void ecal_pi0calib() {
     ch->SetBranchAddress("earm.ecal.idblk", &clus_idblk);
     //ch->SetBranchAddress("earm.ecal.a_p", &energy_blk);
 
-    TH1F *h_pi0_mass = new TH1F("h_pi0_mass", "Pi0 Invariant Mass;M_{#pi^{0}} [GeV];Events", 100, 0, 0.6);
-    TH1F *h_pi0_mass_corr = new TH1F("h_pi0_mass_reco", "Reconstructed Pi0 Invariant Mass;M_{#pi^{0}} [GeV];Events", 100, 0, 0.6);
+    TH1F *h_pi0_mass = new TH1F("h_pi0_mass", "Pi0 Invariant Mass;M_{#pi^{0}} [GeV];Events", 80, 0, 0.6);
+    TH1F *h_pi0_mass_corr = new TH1F("h_pi0_mass_reco", "Reconstructed Pi0 Invariant Mass;M_{#pi^{0}} [GeV];Events", 80, 0, 0.6);
 
     Long64_t nEvents = ch->GetEntries();
     cout << "Number of events: " << nEvents << endl;
@@ -129,7 +131,7 @@ void ecal_pi0calib() {
     for (int i = 0; i < nblocks; ++i) {
         int ilin = i / ncol;
         int icol = i % ncol;
-        if (icol != 0) {  // ignore bad column(s), e.g., 0
+        if (icol != 0 && clus_eblk[0] > 0.0 && clus_eblk[1] > 0.0) {  // ignore bad column(s), e.g., 0
             num_mtob[nbgood] = i;
             num_btom[i] = nbgood;
             nbgood++;
@@ -163,13 +165,13 @@ void ecal_pi0calib() {
         // Check that there are at least two clusters
         if (nclus != 2) continue;
         pass_clus++;
-        if ((ecal_e[0] + ecal_e[1]) < 1.0) continue;         // Minimum energy cut
+        if ((ecal_e[0] + ecal_e[1]) < 0.5) continue;         // Minimum energy cut
 
-        if (ecal_e[0] < 0.1 || ecal_e[1] < 0.1) continue;    // Minimum cluster energy cut Tune the 0.2 GeV threshold based on your noise level.
+        if (ecal_e[0] < 0.2 || ecal_e[1] < 0.2) continue;    // Minimum cluster energy cut Tune the 0.2 GeV threshold based on the noise level.
         if (clus_nblk[0] < 2 || clus_nblk[1] < 2) continue;  // Minimum number of blocks per cluster
 
         Double_t deltaR = sqrt(pow(ecal_x[0] - ecal_x[1], 2) + pow(ecal_y[0] - ecal_y[1], 2));
-        if (deltaR < 0.05) continue;    // reject overlapping clusters
+        if (deltaR < 0.07) continue;    // reject overlapping clusters
         pass_deltar++;
 
         if (clus_a_time[0] < 100 || clus_a_time[0] > 300) continue;  // Minimum time cut
@@ -183,7 +185,11 @@ void ecal_pi0calib() {
         TVector3 pos1(ecal_x[0], ecal_y[0], z_calo);  // in m
         TVector3 pos2(ecal_x[1], ecal_y[1], z_calo);  // in m
 
-        TVector3 vertex(0, 0, z_target);
+        // uniform smearing ±15 cm around (0,0,0.09)
+        double vertex_x_smeared = gRandom->Uniform(-0.15, +0.15);
+        double vertex_y_smeared = gRandom->Uniform(-0.15, +0.15);
+        double vertex_z_smeared = z_target + gRandom->Uniform(-0.15, +0.15);
+        TVector3 vertex(vertex_x_smeared, vertex_y_smeared, vertex_z_smeared);
         TVector3 dir1 = (pos1 - vertex).Unit();
         TVector3 dir2 = (pos2 - vertex).Unit();
 
@@ -195,9 +201,9 @@ void ecal_pi0calib() {
         // Calculate opening angle between the two photons in degrees
         Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
         // Apply cuts in the opening angle and pi0 mass
-        if (opening_angle < 6 || opening_angle > 60) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+        if (opening_angle < 3.5 || opening_angle > 8) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                 // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
-        if (pi0_mass < 0.06 || pi0_mass > 0.6) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
+        if (pi0_mass <= 0.0 || pi0_mass >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
 
         
         // Determine the scale factor
@@ -209,12 +215,12 @@ void ecal_pi0calib() {
         h_pi0_mass->Fill(pi0_mass);
 
         // compute expected total π0 energy as using the scale factor
-        //double pi0_mass_smeared = gRandom->Gaus(pi0_mass_pdg, 0.005); // 5 MeV width max
+        //double pi0_mass_smeared = gRandom->Gaus(pi0_mass_pdg, 0.001); // 5 MeV width max
         double expected_E = (ecal_e[0] + ecal_e[1]) * (pi0_mass_pdg / pi0_mass);
         //if (expected_E / (ecal_e[0] + ecal_e[1]) > 3.0) continue;
 
         
-        // **Loop over all blocks in cluster 0**:
+        // **Loop over all blocks in cluster **:
         // zero the per-block energy accumulator
         std::vector<double> energy(nblocksm, 0.0);
     
@@ -431,15 +437,15 @@ void ecal_pi0calib() {
  
     for (Long64_t i = 0; i < nEvents; i++) {
         ch->GetEntry(i);
-        if ((ecal_e[0] + ecal_e[1]) < 1.0) continue;    // reject low energy events
         if (nclus != 2) continue;
+        if ((ecal_e[0] + ecal_e[1]) < 0.5) continue;    // reject low energy events
         pass_clus_corr++;
 
-        if (ecal_e[0] < 0.1 || ecal_e[1] < 0.1) continue;    // Minimum cluster energy cut Tune the 0.2 GeV threshold based on your noise level.
+        if (ecal_e[0] < 0.2 || ecal_e[1] < 0.2) continue;    // Minimum cluster energy cut Tune the 0.2 GeV threshold based on your noise level.
         if (clus_nblk[0] < 2 || clus_nblk[1] < 2) continue;  // Minimum number of blocks per cluster
 
         Double_t deltaR = sqrt(pow(ecal_x[0] - ecal_x[1], 2) + pow(ecal_y[0] - ecal_y[1], 2));
-        if (deltaR < 0.05) continue; // reject overlapping clusters
+        if (deltaR < 0.07) continue; // reject overlapping clusters
         pass_deltar_corr++;
 
         if (clus_a_time[0] < 100 || clus_a_time[0] > 300) continue;  // reject events with bad timing
@@ -467,9 +473,6 @@ void ecal_pi0calib() {
 
             // Loop over all blocks in cluster
             for (int b = 0; b < nblk; ++b, ++id_blk) {
-                int row   = clus_row[b];
-                int col   = clus_col[b];
-                //int rawID = row*ncol + col;
                 int rawID = static_cast<int>(clus_id[id_blk]);
                 if (rawID<0 || rawID>=nblocks) continue;
                 int iblock   = num_btom[rawID];
@@ -487,23 +490,25 @@ void ecal_pi0calib() {
         TVector3 pos1(ecal_x[0], ecal_y[0], z_calo);  // in m
         TVector3 pos2(ecal_x[1], ecal_y[1], z_calo);  // in m
 
-        TVector3 vertex(0, 0, z_target);
+        // uniform smearing ±15 cm around (0,0,0.09)
+        double vertex_x_smeared = gRandom->Uniform(-0.15, +0.15);
+        double vertex_y_smeared = gRandom->Uniform(-0.15, +0.15);
+        double vertex_z_smeared = z_target + gRandom->Uniform(-0.15, +0.15);
+        TVector3 vertex(vertex_x_smeared, vertex_y_smeared, vertex_z_smeared);
         TVector3 dir1 = (pos1 - vertex).Unit();
         TVector3 dir2 = (pos2 - vertex).Unit();
 
         // rebuild corrected TLorentzVectors
         TLorentzVector ph1_corr(dir1.X() * e_corr[0], dir1.Y() * e_corr[0], dir1.Z() * e_corr[0], e_corr[0]);
         TLorentzVector ph2_corr(dir2.X() * e_corr[1], dir2.Y() * e_corr[1], dir2.Z() * e_corr[1], e_corr[1]);
-
         
-
         double pi0_mass_corr = (ph1_corr + ph2_corr).M();
 
         Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-        if (opening_angle < 6 || opening_angle > 60) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+        if (opening_angle < 3.5 || opening_angle > 8) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                 // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
 
-        if (pi0_mass_corr < 0.06 || pi0_mass_corr > 0.6) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
+        if (pi0_mass_corr <= 0.0 || pi0_mass_corr >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
 
         // fill histograms
         pass_mass_corr++;
@@ -511,13 +516,94 @@ void ecal_pi0calib() {
         
        
     }
+    double mu = h_pi0_mass_corr->GetMean(); 
+    double s = pi0_mass_pdg / mu;
+    for (int raw = 0; raw < nblocks; ++raw)
+        coeff[raw] *= s;
 
+    h_pi0_mass_corr->Reset();  // clear previous content
+
+    for (Long64_t i = 0; i < nEvents; i++) {
+        ch->GetEntry(i);
+        if (nclus != 2) continue;
+        if ((ecal_e[0] + ecal_e[1]) < 0.5) continue;    // reject low energy events
+
+        if (ecal_e[0] < 0.2 || ecal_e[1] < 0.2) continue;    // Minimum cluster energy cut Tune the 0.2 GeV threshold based on your noise level.
+        if (clus_nblk[0] < 2 || clus_nblk[1] < 2) continue;  // Minimum number of blocks per cluster
+
+        Double_t deltaR = sqrt(pow(ecal_x[0] - ecal_x[1], 2) + pow(ecal_y[0] - ecal_y[1], 2));
+        if (deltaR < 0.07) continue; // reject overlapping clusters
+
+        if (clus_a_time[0] < 100 || clus_a_time[0] > 300) continue;  // reject events with bad timing
+        if (clus_a_time[1] < 100 || clus_a_time[1] > 300) continue;  // reject events with bad timing
+        if (fabs(clus_a_time[0] - clus_a_time[1]) > 10) continue;   // reject events with bad timing
+
+        //cout << "Processing event " << i << "\r";
+        if (i % 1000 == 0) cout << "Processing event " << i << " / " << nEvents << endl;
+
+        // **After** correction: rebuild each photon’s energy by summing
+        //     per‑block energies * coefficients
+        double e_corr[2] = {0., 0.};
+        int id_blk = 0;
+
+        for (int cl =0; cl < nclus; ++cl) {
+            // Energy of block with highest energy in cluster
+            double e_main_blk = clus_eblk[cl];
+            // Number of blocks in cluster
+            int nblk = clus_nblk[cl];
+            // remaining energy to be shared among other blocks
+            double e_rem = (nblk > 1) ? (ecal_e[cl] - e_main_blk) / (nblk - 1) : 0.0;
+
+            // Loop over all blocks in cluster
+            for (int b = 0; b < nblk; ++b, ++id_blk) {
+                int rawID = static_cast<int>(clus_id[id_blk]);
+                if (rawID<0 || rawID>=nblocks) continue;
+                int iblock   = num_btom[rawID];
+                if (iblock<0 || iblock>=nblocksm) continue;
+
+                if (rawID == (int)clus_idblk[cl]) {
+                    e_corr[cl] += coeff[rawID] * e_main_blk;
+                } else {
+                    e_corr[cl] += coeff[rawID] * e_rem;
+                }
+            }
+
+        }
+
+        TVector3 pos1(ecal_x[0], ecal_y[0], z_calo);  // in m
+        TVector3 pos2(ecal_x[1], ecal_y[1], z_calo);  // in m
+
+        // uniform smearing ±15 cm around (0,0,0.09)
+        double vertex_x_smeared = gRandom->Uniform(-0.15, +0.15);
+        double vertex_y_smeared = gRandom->Uniform(-0.15, +0.15);
+        double vertex_z_smeared = z_target + gRandom->Uniform(-0.15, +0.15);
+        TVector3 vertex(vertex_x_smeared, vertex_y_smeared, vertex_z_smeared);
+        TVector3 dir1 = (pos1 - vertex).Unit();
+        TVector3 dir2 = (pos2 - vertex).Unit();
+
+        // rebuild corrected TLorentzVectors
+        TLorentzVector ph1_corr(dir1.X() * e_corr[0], dir1.Y() * e_corr[0], dir1.Z() * e_corr[0], e_corr[0]);
+        TLorentzVector ph2_corr(dir2.X() * e_corr[1], dir2.Y() * e_corr[1], dir2.Z() * e_corr[1], e_corr[1]);
+        
+        double pi0_mass_corr = (ph1_corr + ph2_corr).M();
+
+        Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
+        if (opening_angle < 3.5 || opening_angle > 8) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+                                                                // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
+
+        if (pi0_mass_corr <= 0.0 || pi0_mass_corr >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
+
+        // fill histograms
+        h_pi0_mass_corr->Fill(pi0_mass_corr);
+        
+       
+    }
     // -------------------- Plotting --------------------
     TCanvas *c = new TCanvas("c","before/after", 800,600);
     h_pi0_mass->SetLineColor(kRed);
     h_pi0_mass_corr->SetLineColor(kBlue);
-    h_pi0_mass_corr->Draw();
-    h_pi0_mass->Draw("SAME");
+    h_pi0_mass->Draw();
+    h_pi0_mass_corr->Draw("SAME");
     auto leg = new TLegend(0.6,0.7,0.9,0.9);
     leg->AddEntry(h_pi0_mass,      "Before calib", "l");
     leg->AddEntry(h_pi0_mass_corr, "After calib",  "l");
