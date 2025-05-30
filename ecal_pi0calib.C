@@ -28,6 +28,45 @@ using namespace std;
 // 
 // run the script with "root -l ecal_pi0calib.C"
 
+// Find the highest and second-highest energy clusters
+void find_highest_energy(const Double_t ecal_e[], int nclus, int &imax1, int &imax2, double &e1, double &e2) {
+    for (int icl = 0; icl < nclus; ++icl) {
+        if (ecal_e[icl] > e1) {
+            // If this cluster has the highest energy so far:
+            e2 = e1; imax2 = imax1;               // The old highest becomes the second-highest, The old highest index becomes the second-highest index
+            e1 = ecal_e[icl]; imax1 = icl;        // Update highest energy and highest index
+        } else if (ecal_e[icl] > e2) {
+            // If this cluster is not the highest, but is higher than the second-highest:
+            e2 = ecal_e[icl]; imax2 = icl;        // Update second-highest energy and the second-highest index
+        }
+    }
+}
+// Best pair of clusters within the time window
+void best_pair_cuts(
+    const Double_t ecal_e[], const Double_t clus_nblk[],
+    const Double_t ecal_x[], const Double_t ecal_y[], 
+    const Double_t clus_a_time[], 
+    int nclus, int &best_icl, int &best_jcl, double &best_dt) {
+    for (int icl = 0; icl < nclus; ++icl) {
+        for (int jcl = icl + 1; jcl < nclus; ++jcl) {
+            if ((ecal_e[icl] + ecal_e[jcl]) < 0.5) continue;
+            if (ecal_e[icl] < 0.2 || ecal_e[jcl] < 0.2) continue;
+            if (clus_nblk[icl] < 2 || clus_nblk[jcl] < 2) continue;
+            Double_t deltaR = sqrt(pow(ecal_x[icl] - ecal_x[jcl], 2) + pow(ecal_y[icl] - ecal_y[jcl], 2));
+            if (deltaR < 0.07) continue;
+            //pass_deltar++;
+            if (clus_a_time[icl] < 100 || clus_a_time[icl] > 180) continue;
+            if (clus_a_time[jcl] < 100 || clus_a_time[jcl] > 180) continue;
+            double dt = fabs(clus_a_time[icl] - clus_a_time[jcl]);
+            if (dt < best_dt && dt < 4) { // time window 
+                best_dt = dt;
+                best_icl = icl;
+                best_jcl = jcl;
+            }
+        }
+    }
+}
+
 void ecal_pi0calib() {
     const Double_t z_calo = 6; // position of calorimeter from the target in m
     const Double_t z_target = 0.09;    // position of target
@@ -94,11 +133,8 @@ void ecal_pi0calib() {
     ch->SetBranchAddress("earm.ecal.goodblock.id", &goodblock_id);
     ch->SetBranchAddress("earm.ecal.goodblock.col", &goodblock_col);
     ch->SetBranchAddress("earm.ecal.goodblock.row", &goodblock_row);
-    ch->SetBranchAddress("earm.ecal.goodblock.cid", &goodblock_row);
+    ch->SetBranchAddress("earm.ecal.goodblock.cid", &goodblock_cid);
 
-    
-
-    //ch->SetBranchAddress("earm.ecal.a_p", &energy_blk);
 
     Double_t ngoodADChits = 0;
     ch->SetBranchAddress("earm.ecal.ngoodADChits", &ngoodADChits);
@@ -186,120 +222,111 @@ void ecal_pi0calib() {
         ch->GetEntry(i);
         cout << "Processing event " << i << "\r";
         // Check that there are at least two clusters
-        if (nclus != 2) continue;
-        clusterBlocks[i].resize(nclus);
+        if (nclus < 2) continue;
         pass_clus++;
-        if ((ecal_e[0] + ecal_e[1]) < 0.5) continue;         // Minimum energy cut
-
-        if (ecal_e[0] < 0.2 || ecal_e[1] < 0.2) continue;    // Minimum cluster energy cut Tune the 0.2 GeV threshold based on the noise level.
-        if (clus_nblk[0] < 2 || clus_nblk[1] < 2) continue;  // Minimum number of blocks per cluster
-
-        Double_t deltaR = sqrt(pow(ecal_x[0] - ecal_x[1], 2) + pow(ecal_y[0] - ecal_y[1], 2));
-        if (deltaR < 0.07) continue;    // reject overlapping clusters
-        pass_deltar++;
-
-        if (clus_a_time[0] < 100 || clus_a_time[0] > 300) continue;  // Minimum time cut
-        if (clus_a_time[1] < 100 || clus_a_time[1] > 300) continue;  // Minimum time cut
-        if (fabs(clus_a_time[0] - clus_a_time[1]) > 10) continue;    // Maximum time difference between clusters
+        // Find the two clusters with the best time difference and apply cuts
+        double best_dt = 1e9;
+        int best_icl = -1, best_jcl = -1;
+        best_pair_cuts(ecal_e, clus_nblk, ecal_x, ecal_y, clus_a_time, nclus, best_icl, best_jcl, best_dt);
         pass_time++;
+        // Find indices of the two clusters with the highest energies
+        int imax1 = -1, imax2 = -1; // Index of highest and second-highest energy cluster
+        double e1 = -1, e2 = -1;  // Energy of highest and second-highest energy cluster
+        find_highest_energy(ecal_e, nclus, imax1, imax2, e1, e2);
 
-        // Estimating the vector position of both clusters
-        TVector3 pos1(ecal_x[0], ecal_y[0], z_calo);  // in m
-        TVector3 pos2(ecal_x[1], ecal_y[1], z_calo);  // in m
-        // Now, the direction unitary vector form the vertex to the position in the ecal
-        TVector3 vertex(0, 0, z_target);
-        TVector3 dir1 = (pos1 - vertex).Unit();
-        TVector3 dir2 = (pos2 - vertex).Unit();
-        // The 4-momenta
-        TLorentzVector ph1(dir1.X() * ecal_e[0], dir1.Y() * ecal_e[0], dir1.Z() * ecal_e[0], ecal_e[0]);
-        TLorentzVector ph2(dir2.X() * ecal_e[1], dir2.Y() * ecal_e[1], dir2.Z() * ecal_e[1], ecal_e[1]);
+        if (best_icl >= 0 && best_jcl >= 0) {
+            if (!((best_icl == imax1 && best_jcl == imax2) || (best_icl == imax2 && best_jcl == imax1))) {
+                continue; // skip if not the two highest-energy clusters
+            }
+            TVector3 pos1(ecal_x[best_icl], ecal_y[best_icl], z_calo);  // in m
+            TVector3 pos2(ecal_x[best_jcl], ecal_y[best_jcl], z_calo);  // in m
 
-        // Calculate pi0 invariant mass
-        Double_t pi0_mass = (ph1 + ph2).M();
-        // Calculate opening angle between the two photons in degrees
-        Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-        // Apply cuts in the opening angle and pi0 mass
-        if (opening_angle < 3.5 || opening_angle > 10) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
-                                                                // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
-        if (pi0_mass <= 0.02 || pi0_mass >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
+            TVector3 vertex(0, 0, z_target);
+            TVector3 dir1 = (pos1 - vertex).Unit();
+            TVector3 dir2 = (pos2 - vertex).Unit();
 
-        // Determine the scale factor
-        // avoid zero division
-        if (pi0_mass <= 0) continue;
-        pass_mass++;
+            TLorentzVector ph1(dir1.X() * ecal_e[best_icl], dir1.Y() * ecal_e[best_icl], dir1.Z() * ecal_e[best_icl], ecal_e[best_icl]);
+            TLorentzVector ph2(dir2.X() * ecal_e[best_jcl], dir2.Y() * ecal_e[best_jcl], dir2.Z() * ecal_e[best_jcl], ecal_e[best_jcl]);
 
-        // Filling the uncorrected pi0 mass histogram
-        h_pi0_mass->Fill(pi0_mass);
 
-        // compute expected total π0 energy as using the scale factor
-        double pi0_mass_smeared = gRandom->Gaus(pi0_mass_pdg, 0.005); // 5 MeV width max
-        double expected_E = (ecal_e[0] + ecal_e[1]) * (pi0_mass_smeared / pi0_mass);
-        //double expected_E = pi0_mass_pdg / pi0_mass;
-        
-        // **Loop over all blocks in cluster **:
-        // zero the per-block energy accumulator
-        std::vector<double> energy(nblocksm, 0.0);
-  
-        // Loop over all clusters and blocks per event
-        for (int cl = 0; cl < nclus; ++cl) {
-            int seedID = static_cast<int>(clus_id[cl]);
-            int nblk = clus_nblk[cl];
-            double e_seed = 0.0;
-            double e_rem = 0.0;
+            Double_t pi0_mass = (ph1 + ph2).M();
 
-            // Find the energy of the seed block among good blocks
-            for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
-                if ((int)goodblock_id[b] == seedID) {
-                    e_seed = goodblock_e[b];
-                    break;
+            Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
+            if (opening_angle < 3 || opening_angle > 10) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+                                                                    // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
+            if (pi0_mass < 0.02 || pi0_mass > 0.4) continue;
+            pass_mass++;
+            h_pi0_mass->Fill(pi0_mass);
+
+            // compute expected total π0 energy as using the scale factor
+            //double pi0_mass_smeared = gRandom->Gaus(pi0_mass_pdg, 0.005); // 5 MeV width max
+            double expected_E = (ecal_e[best_icl] + ecal_e[best_jcl]) * (pi0_mass_pdg / pi0_mass);
+            //double expected_E = pi0_mass_pdg / pi0_mass;
+            
+            // **Loop over all blocks in cluster **:
+            // zero the per-block energy accumulator
+            std::vector<double> energy(nblocksm, 0.0);
+    
+            // Loop over all clusters and blocks per event
+            for (int cl = 0; cl < nclus; ++cl) {
+                int seedID = static_cast<int>(clus_id[cl]);
+                int nblk = clus_nblk[cl];
+                double e_seed = 0.0;
+                double e_rem = 0.0;
+
+                // Find the energy of the seed block among good blocks
+                for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
+                    if ((int)goodblock_id[b] == seedID) {
+                        e_seed = goodblock_e[b];
+                        break;
+                    }
+                }
+                //if (nblk > 1) e_rem = (ecal_e[cl] - e_seed) / (nblk - 1);
+
+                // Compute weights for all good blocks based on distance to cluster centroid
+                std::vector<double> weights(ngoodADChits, 0.0);
+                double total_weight = 0.0;
+                for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
+                    int rawID = (int)goodblock_id[b];
+                    if (rawID == seedID) continue; // skip seed block for weights
+                    int blockRow = rawID / ncol;
+                    int blockCol = rawID % ncol;
+                    double distance = sqrt(pow(blockRow - clus_row[cl], 2) + pow(blockCol - clus_col[cl], 2));
+                    double weight = 1.0 / (1.0 + distance);
+                    weights[b] = weight;
+                    total_weight += weight;
+                }
+
+                // Assign energy to each good block
+                for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
+                    int rawID = (int)goodblock_id[b];
+                    int cid = (int)goodblock_cid[b];
+                    int iblock = num_btom[rawID];
+                    if (iblock < 0 || iblock >= nblocksm) continue;
+                    if (cid != cl) continue; // Only assign energy to blocks in this cluster
+                    energy[iblock] += goodblock_e[b];
+                    if (energy[iblock] > 0.0) occupancy[iblock]++;
                 }
             }
-            if (nblk > 1) e_rem = (ecal_e[cl] - e_seed) / (nblk - 1);
-
-            // Compute weights for all good blocks based on distance to cluster centroid
-            std::vector<double> weights(ngoodADChits, 0.0);
-            double total_weight = 0.0;
-            for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
-                int rawID = (int)goodblock_id[b];
-                if (rawID == seedID) continue; // skip seed block for weights
-                int blockRow = rawID / ncol;
-                int blockCol = rawID % ncol;
-                double distance = sqrt(pow(blockRow - clus_row[cl], 2) + pow(blockCol - clus_col[cl], 2));
-                double weight = 1.0 / (1.0 + distance);
-                weights[b] = weight;
-                total_weight += weight;
-            }
-
-            // Assign energy to each good block
-            for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
-                int rawID = (int)goodblock_id[b];
-                int iblock = num_btom[rawID];
-                if (iblock < 0 || iblock >= nblocksm) continue;
-                if (rawID == seedID) {
-                    energy[iblock] += e_seed;
-                } else if (total_weight > 0) {
-                    energy[iblock] += e_rem * (weights[b] / total_weight);
+            // Now fill A and B:
+            for (int j = 0; j < nblocksm; ++j) {
+                for (int k = 0; k < nblocksm; ++k) {
+                    A(j,k) += energy[j] * energy[k];
                 }
-                if (energy[iblock] > 0.0) occupancy[iblock]++;
-            }
+                B(j) += energy[j] * expected_E;
+            } 
         }
        
-        // Now fill A and B:
-        for (int j = 0; j < nblocksm; ++j) {
-            for (int k = 0; k < nblocksm; ++k) {
-                A(j,k) += energy[j] * energy[k];
-            }
-            B(j) += energy[j] * expected_E;
-        } 
+        
 
     }
     cout<<"Events passing number of clusters cut: "<<pass_clus<<endl;
-    cout<<"Events passing deltaR cut: "<<pass_deltar<<endl;
+    //cout<<"Events passing deltaR cut: "<<pass_deltar<<endl;
     cout<<"Events passing time cut: "<<pass_time<<endl;
     cout<<"Events passing all cuts: "<<pass_mass<<endl;
   
     // ===================== OCCUPANCY PRUNING & REGULARIZATION =====================
-    const int N_min = 10;
+    const int N_min = 5;
     for (int i = 0; i < nblocksm; ++i) {
         if (occupancy[i] < N_min) {
             // zero out row and column i
@@ -329,20 +356,6 @@ void ecal_pi0calib() {
     //Double_t coeff[nblocks];
     std::vector<double> coeff(nblocks, 1.0);
 
-
-    //for(Int_t i=0;i<nblocks;i++){coeff[i]=1.;} // Set all coefficients to 1 for missing blocks
-    // overwrite good blocks
-
-    // Check if the matrix is invertible
-    // invert & solve C=B·A⁻¹
-    /*if (TMath::Abs(A.Determinant()) < 1e-10) {
-        cout << "Matrix is singular. Cannot invert." << endl;
-     
-    } else {
-        A.Invert();
-        // Continue with the inversion and other calculations
-    }
-    TVectorD C = B; */
     // SVD decomposition of A and solve C = A⁺·B (see https://root.cern.ch/doc/master/classTDecompSVD.html)
     TDecompSVD svd(A);
     if (!svd.Decompose()) {
@@ -402,95 +415,78 @@ void ecal_pi0calib() {
     for (Long64_t i = 0; i < nEvents; i++) {
         ch->GetEntry(i);
         cout << "Processing event " << i << "\r";
-        if (nclus != 2) continue;
-        if ((ecal_e[0] + ecal_e[1]) < 0.5) continue;    // reject low energy events
+        if (nclus < 2) continue;
         pass_clus_corr++;
-
-        if (ecal_e[0] < 0.2 || ecal_e[1] < 0.2) continue;    // Minimum cluster energy cut Tune the 0.2 GeV threshold based on your noise level.
-        if (clus_nblk[0] < 2 || clus_nblk[1] < 2) continue;  // Minimum number of blocks per cluster
-
-        Double_t deltaR = sqrt(pow(ecal_x[0] - ecal_x[1], 2) + pow(ecal_y[0] - ecal_y[1], 2));
-        if (deltaR < 0.07) continue; // reject overlapping clusters
-        pass_deltar_corr++;
-
-        if (clus_a_time[0] < 100 || clus_a_time[0] > 300) continue;  // reject events with bad timing
-        if (clus_a_time[1] < 100 || clus_a_time[1] > 300) continue;  // reject events with bad timing
-        if (fabs(clus_a_time[0] - clus_a_time[1]) > 10) continue;   // reject events with bad timing
+         // Find the two clusters with the best time difference and apply cuts
+        double best_dt = 1e9;
+        int best_icl = -1, best_jcl = -1;
+        best_pair_cuts(ecal_e, clus_nblk, ecal_x, ecal_y, clus_a_time, nclus, best_icl, best_jcl, best_dt);
         pass_time_corr++;
-        //if (i % 1000 == 0) cout << "Processing event " << i << " / " << nEvents << endl;
-
-
-
+        // Find indices of the two clusters with the highest energies
+        int imax1 = -1, imax2 = -1; // Index of highest and second-highest energy cluster
+        double e1 = -1, e2 = -1;  // Energy of highest and second-highest energy cluster
+        find_highest_energy(ecal_e, nclus, imax1, imax2, e1, e2);
+ 
         // **After** correction: rebuild each photon’s energy by summing
         //     per‑block energies * coefficients
+        if (best_icl >= 0 && best_jcl >= 0) {
+            if (!((best_icl == imax1 && best_jcl == imax2) || (best_icl == imax2 && best_jcl == imax1))) {
+                continue; // skip if not the two highest-energy clusters
+            }
+            double e_corr[2] = {0., 0.};
 
-        double e_corr[2] = {0., 0.};
+            int idx[2] = {best_icl, best_jcl};
+            for (int ic = 0; ic < 2; ++ic) {
+                int cl = idx[ic];
+                int seedID = static_cast<int>(clus_id[cl]);
+                int nblk = clus_nblk[cl];
+                double e_seed = 0.0;
+                double e_rem = 0.0;
 
-        for (int cl = 0; cl < nclus; ++cl) {
-            int seedID = static_cast<int>(clus_id[cl]);
-            int nblk = clus_nblk[cl];
-            double e_seed = 0.0;
-            double e_rem = 0.0;
+                // Find the energy of the seed block among good blocks
+                int seed_idx = -1;
+                for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
+                    if ((int)goodblock_id[b] == seedID) {
+                        e_seed = goodblock_e[b];
+                        seed_idx = b;
+                        break;
+                    }
+                }
+                if (nblk > 1) e_rem = (ecal_e[cl] - e_seed) / (nblk - 1);
 
-            // Find the energy of the seed block among good blocks
-            int seed_idx = -1;
-            for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
-                if ((int)goodblock_id[b] == seedID) {
-                    e_seed = goodblock_e[b];
-                    seed_idx = b;
-                    break;
+                // Assign energy to each good block
+                for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
+                    int rawID = (int)goodblock_id[b];
+                    int cid = (int)goodblock_cid[b];
+                    if (rawID < 0 || rawID >= nblocks) continue;
+                    if (cid != cl) continue; // Only assign energy to blocks in this cluster
+                    e_corr[ic] += coeff[rawID] * goodblock_e[b];
                 }
             }
-            if (nblk > 1) e_rem = (ecal_e[cl] - e_seed) / (nblk - 1);
+            TVector3 pos1(ecal_x[best_icl], ecal_y[best_icl], z_calo);  // in m
+            TVector3 pos2(ecal_x[best_jcl], ecal_y[best_jcl], z_calo);  // in m
 
-            // Compute weights for all good blocks (excluding seed) based on distance to cluster centroid
-            std::vector<double> weights(ngoodADChits, 0.0);
-            double total_weight = 0.0;
-            for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
-                int rawID = (int)goodblock_id[b];
-                if (rawID == seedID) continue;
-                int blockRow = rawID / ncol;
-                int blockCol = rawID % ncol;
-                double distance = sqrt(pow(blockRow - clus_row[cl], 2) + pow(blockCol - clus_col[cl], 2));
-                double weight = 1.0 / (1.0 + distance);
-                weights[b] = weight;
-                total_weight += weight;
-            }
+            TVector3 vertex(0, 0, z_target);
+            TVector3 dir1 = (pos1 - vertex).Unit();
+            TVector3 dir2 = (pos2 - vertex).Unit();
 
-            // Assign energy to each good block
-            for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
-                int rawID = (int)goodblock_id[b];
-                if (rawID < 0 || rawID >= nblocks) continue;
-                if (rawID == seedID) {
-                    e_corr[cl] += coeff[rawID] * e_seed;
-                } else if (total_weight > 0) {
-                    e_corr[cl] += coeff[rawID] * e_rem * (weights[b] / total_weight);
-                }
-            }
+            // rebuild corrected TLorentzVectors
+            TLorentzVector ph1_corr(dir1.X() * e_corr[0], dir1.Y() * e_corr[0], dir1.Z() * e_corr[0], e_corr[0]);
+            TLorentzVector ph2_corr(dir2.X() * e_corr[1], dir2.Y() * e_corr[1], dir2.Z() * e_corr[1], e_corr[1]);
+            
+            double pi0_mass_corr = (ph1_corr + ph2_corr).M();
+
+            Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
+            if (opening_angle < 3 || opening_angle > 10) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+                                                                    // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
+
+            if (pi0_mass_corr <= 0.02 || pi0_mass_corr >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
+
+            // fill histograms
+            pass_mass_corr++;
+            h_pi0_mass_corr->Fill(pi0_mass_corr);
+
         }
-
-        TVector3 pos1(ecal_x[0], ecal_y[0], z_calo);  // in m
-        TVector3 pos2(ecal_x[1], ecal_y[1], z_calo);  // in m
-
-        TVector3 vertex(0, 0, z_target);
-        TVector3 dir1 = (pos1 - vertex).Unit();
-        TVector3 dir2 = (pos2 - vertex).Unit();
-
-        // rebuild corrected TLorentzVectors
-        TLorentzVector ph1_corr(dir1.X() * e_corr[0], dir1.Y() * e_corr[0], dir1.Z() * e_corr[0], e_corr[0]);
-        TLorentzVector ph2_corr(dir2.X() * e_corr[1], dir2.Y() * e_corr[1], dir2.Z() * e_corr[1], e_corr[1]);
-        
-        double pi0_mass_corr = (ph1_corr + ph2_corr).M();
-
-        Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-        if (opening_angle < 3.5 || opening_angle > 10) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
-                                                                // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
-
-        if (pi0_mass_corr <= 0.02 || pi0_mass_corr >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
-
-        // fill histograms
-        pass_mass_corr++;
-        h_pi0_mass_corr->Fill(pi0_mass_corr);
     }
 
     // -------------------- Plotting --------------------
@@ -521,7 +517,7 @@ void ecal_pi0calib() {
         }
     }
     cout<<"Events passing number of clusters cut after calib: "<<pass_clus_corr<<endl;
-    cout<<"Events passing deltaR cut after calib: "<<pass_deltar_corr<<endl;
+    //cout<<"Events passing deltaR cut after calib: "<<pass_deltar_corr<<endl;
     cout<<"Events passing time cut after calib: "<<pass_time_corr<<endl;
     cout<<"Events passing all cuts after calib: "<<pass_mass_corr<<endl;
 
