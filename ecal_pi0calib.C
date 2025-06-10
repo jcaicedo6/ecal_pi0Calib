@@ -49,16 +49,17 @@ void best_pair_cuts(
     int nclus, int &best_icl, int &best_jcl, double &best_dt) {
     for (int icl = 0; icl < nclus; ++icl) {
         for (int jcl = icl + 1; jcl < nclus; ++jcl) {
-            if ((ecal_e[icl] + ecal_e[jcl]) < 0.5) continue;
-            if (ecal_e[icl] < 0.2 || ecal_e[jcl] < 0.2) continue;
-            if (clus_nblk[icl] < 2 || clus_nblk[jcl] < 2) continue;
+            if ((ecal_e[icl] + ecal_e[jcl]) < 0.5) continue;            // sum of energies of the two clusters lager than 0.5 GeV
+            if (ecal_e[icl] < 0.2 || ecal_e[jcl] < 0.2) continue;       // each cluster energy larger than 0.2 GeV
+            if (clus_nblk[icl] < 2 || clus_nblk[jcl] < 2) continue;     // each cluster has at least 2 blocks
             Double_t deltaR = sqrt(pow(ecal_x[icl] - ecal_x[jcl], 2) + pow(ecal_y[icl] - ecal_y[jcl], 2));
-            if (deltaR < 0.07) continue;
+            if (deltaR < 0.07) continue;                                // distance between clusters less than 0.07 m
             //pass_deltar++;
-            if (clus_a_time[icl] < 100 || clus_a_time[icl] > 200) continue;
-            if (clus_a_time[jcl] < 100 || clus_a_time[jcl] > 200) continue;
+            if (clus_a_time[icl] < 100 || clus_a_time[icl] > 140) continue;  // cluster time in the range 100-140 ns
+            if (clus_a_time[jcl] < 100 || clus_a_time[jcl] > 140) continue;  // cluster time in the range 100-140 ns
             double dt = fabs(clus_a_time[icl] - clus_a_time[jcl]);
-            if (dt < best_dt && dt < 4) { // time window 
+            if (dt < best_dt && dt < 4) { // time difference less than 4 ns between clusters
+                // Update the best pair of clusters
                 best_dt = dt;
                 best_icl = icl;
                 best_jcl = jcl;
@@ -73,8 +74,8 @@ void ecal_pi0calib() {
     const Double_t z_origin = 0.0;
     const Double_t vertex_z = z_target - z_origin;  // position of vertex, where the pi0 is created, right in the middle of the target
 
-    const int nbclusmax=100;// maximum number of clusters
-    const int sizemax=1000;// maximum size of the cluster (how many blocks in each cluster)
+    const int nbclusmax=100;    // maximum number of clusters
+    const int sizemax=1000;     // maximum size of the cluster (how many blocks in each cluster)
 
     const double pi0_mass_pdg = 0.1349766;  // PDG pi0 mass in GeV
     TChain *ch = new TChain("T");
@@ -140,7 +141,7 @@ void ecal_pi0calib() {
     ch->SetBranchAddress("earm.ecal.ngoodADChits", &ngoodADChits);
 
     TH1F *h_pi0_mass = new TH1F("h_pi0_mass", "Pi0 Invariant Mass;M_{#pi^{0}} [GeV];Events", 80, 0, 0.6);
-    TH1F *h_pi0_mass_corr = new TH1F("h_pi0_mass_reco", "Reconstructed Pi0 Invariant Mass;M_{#pi^{0}} [GeV];Events", 80, 0, 0.6);
+    TH1F *h_pi0_mass_corr = new TH1F("h_pi0_mass_reco", "Reconstructed #pi^{0} Invariant Mass;M_{#pi^{0}} [GeV];Events", 80, 0, 0.6);
 
     Long64_t nEvents = ch->GetEntries();
     cout << "Number of events: " << nEvents << endl;
@@ -248,7 +249,7 @@ void ecal_pi0calib() {
             Double_t pi0_mass = (ph1 + ph2).M();
 
             Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-            if (opening_angle < 3.5 || opening_angle > 8) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+            if (opening_angle < 3 || opening_angle > 9) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                     // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
             if (pi0_mass < 0.02 || pi0_mass > 0.4) continue;
             pass_mass++;
@@ -261,7 +262,8 @@ void ecal_pi0calib() {
             
             // **Loop over all blocks in cluster **:
             // zero the per-block energy accumulator
-            std::vector<double> energy(nblocks, 0.0);
+            static std::vector<double> energy(nblocks, 0.0);
+            energy.assign(nblocks, 0.0);
     
             // Loop over all clusters and blocks per event
             for (int cl = 0; cl < nclus; ++cl) {
@@ -330,6 +332,7 @@ void ecal_pi0calib() {
     }
     // Prepare solution vector
     // Copy B into C, then solve C = A⁺·B
+    cout << "\n--- Solving the matrix system ---" << endl;
     TVectorD C = B;           // initialize C with RHS
     Bool_t ok = svd.Solve(C); // Solve in place: C ← pseudo-inverse(A)·C
     if (!ok) {
@@ -360,9 +363,10 @@ void ecal_pi0calib() {
     }
     
     // -------------------- Saving the coefficients in a text file --------------------
+    cout << "\n--- Creating the coefficient file ---" << endl;
     cout<<"Writing coefficients to file..."<<endl;
 
-    ofstream coeff_file("ecal_block_calibration_factors.txt");
+    ofstream coeff_file("calib_coeff/ecal_block_calibration_factors_noiter.txt");
     coeff_file << "# BlockID\tCalibrationCoeff\n";
 
     for (int i = 0; i < nblocks; i++) {
@@ -437,7 +441,7 @@ void ecal_pi0calib() {
             double pi0_mass_corr = (ph1_corr + ph2_corr).M();
 
             Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-            if (opening_angle < 3.5 || opening_angle > 8) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+            if (opening_angle < 3 || opening_angle > 9) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                     // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
 
             if (pi0_mass_corr <= 0.02 || pi0_mass_corr >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
@@ -449,7 +453,7 @@ void ecal_pi0calib() {
             //h_pi0_mass_corr->Fill(pi0_mass_corr);
         }
     }
-    cout << "Scaling coefficients to match PDG π⁰ mass..." << endl;
+    cout << "\n -----  Scaling coefficients to match PDG π⁰ mass.. -----" << endl;
     if (test_mass_sum > 0) {
         double mean_mass = test_mass_sum / test_mass_count;
         double scale_factor = pi0_mass_pdg / mean_mass;
@@ -513,29 +517,31 @@ void ecal_pi0calib() {
             double pi0_mass_corr = (ph1_corr + ph2_corr).M();
 
             Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-            if (opening_angle < 3.5 || opening_angle > 8) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+            if (opening_angle < 3 || opening_angle > 9) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                     // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
 
             if (pi0_mass_corr <= 0.02 || pi0_mass_corr >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
-
-            // fill histograms
-            test_mass_sum += pi0_mass_corr;
-            test_mass_count++;
-            pass_mass_corr++;
             h_pi0_mass_corr->Fill(pi0_mass_corr);
         }
     }
 
     // -------------------- Plotting --------------------
-    TCanvas *c = new TCanvas("c","before/after", 800,600);
-    h_pi0_mass->SetLineColor(kRed);
-    h_pi0_mass_corr->SetLineColor(kBlue);
+    TCanvas *c = new TCanvas("c","Reconstructed #pi^{0} Invariant Mass Before and After Calibration", 800,600);
+    h_pi0_mass->SetStats(0);
+    h_pi0_mass_corr->SetStats(0);
+    h_pi0_mass->GetXaxis()->SetTitle("M_{#pi^{0}} [GeV]");
+    h_pi0_mass->GetYaxis()->SetTitle("Events");
+    h_pi0_mass->SetLineWidth(2);
+    h_pi0_mass_corr->SetLineWidth(2);
+    h_pi0_mass->SetLineColor(kBlue);
+    h_pi0_mass_corr->SetLineColor(kRed);
     h_pi0_mass_corr->Draw();
     h_pi0_mass->Draw("SAME");
     auto leg = new TLegend(0.6,0.7,0.9,0.9);
     leg->AddEntry(h_pi0_mass,      "Before calib", "l");
     leg->AddEntry(h_pi0_mass_corr, "After calib",  "l");
     leg->Draw();
+    c->SaveAs("plots/ecal_pi0_mass_calib_noiter.png");
 
 
     // Create a 2D histogram to visualize calibration coefficients in the detector geometry
@@ -551,6 +557,7 @@ void ecal_pi0calib() {
         double val = coeff[i];
         h_coeff_map->SetBinContent(col - minCol + 1, row - minRow + 1, val);  // ROOT bins start from 1
     }
+    cout << "\n -----  Summary of the cuts -----" << endl;
     cout<<"Events passing number of clusters cut after calib: "<<pass_clus_corr<<endl;
     //cout<<"Events passing deltaR cut after calib: "<<pass_deltar_corr<<endl;
     cout<<"Events passing time cut after calib: "<<pass_time_corr<<endl;
@@ -566,4 +573,5 @@ void ecal_pi0calib() {
     TCanvas *c_map = new TCanvas("c_map", "ECAL Coefficients Heatmap", 900, 800);
     h_coeff_map->SetStats(0);
     h_coeff_map->Draw("COLZ");
+    c_map->SaveAs("plots/ecal_coefficients_heatmap_noiter.png");
 }
