@@ -1,0 +1,6 @@
+gep5_fullreplay_3173_stream0_0_seg0_0.root  
+gep5_fullreplay_3173_stream1_1_seg0_0.root 
+gep5_fullreplay_3173_stream2_2_seg0_0.root
+gep5_fullreplay_3173_stream0_0_seg1_1.root  
+gep5_fullreplay_3173_stream1_1_seg1_1.root  
+gep5_fullreplay_3173_stream2_2_seg1_1.root
