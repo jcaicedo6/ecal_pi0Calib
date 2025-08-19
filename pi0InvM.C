@@ -32,19 +32,24 @@ void pi0InvM() {
     //string path = "/volatile/halla/sbs/sbs-gep/GEP_REPLAYS/GEP1/LH2/prod_realign_lowcur_April28/rootfiles/";
     //ifstream infile("lists_runs/runfiles_3173_to_3192.txt");
 
-    //string path = "/adaqfs/home/a-onl/sbs/Rootfiles/";
-    //ifstream infile("lists_runs/runfiles_3637.txt");
+    string path = "/adaqfs/home/a-onl/sbs/Rootfiles/";
+    ifstream infile("lists_runs/runfiles_3637.txt");
 
     // For the Monte Carlo simulation data
-    string path = "/volatile/halla/sbs/efuchey/GEP3mod_pi0ECal_20250605/";
-    ifstream infile("lists_runs/replays_mc.txt");
+    //string path = "/volatile/halla/sbs/efuchey/GEP3mod_pi0ECal_20250605/";
+    //ifstream infile("lists_runs/replays_mc.txt");
+
+    // For the real data
+    //ifstream infile("lists_runs/runfiles_3637_to_4810.txt");
+
 
     string filename;
 
     while (getline(infile, filename)) {
         ch->Add((path + filename).c_str());
+        //ch->Add((filename).c_str());
     }
-
+    //ch->Add("/volatile/halla/sbs/jonesdc/output/reduced/rootfiles/gep5_fullreplay_nogems_*.root");
     // Initialize the pointers before setting the branch address
     Double_t ecal_e[100]; // Adjust the size if necessary
     Double_t ecal_x[100];
@@ -52,26 +57,26 @@ void pi0InvM() {
 
     ch->SetBranchStatus("*", 0); // disable all Branches
     ch->SetBranchAddress("earm.ecal.clus.e", &ecal_e);
+    ch->AddBranchToCache("earm.ecal.clus.e", kTRUE);
     ch->SetBranchAddress("earm.ecal.clus.x", &ecal_x);
+    ch->AddBranchToCache("earm.ecal.clus.e", kTRUE);
     ch->SetBranchAddress("earm.ecal.clus.y", &ecal_y);
+    ch->AddBranchToCache("earm.ecal.clus.y", kTRUE);
 
     Double_t nclus;
     ch->SetBranchAddress("earm.ecal.nclus", &nclus);
+    ch->AddBranchToCache("earm.ecal.nclus", kTRUE);
+    // Define the time of each cluster
 
     Double_t clus_a_time[1000];
     ch->SetBranchAddress("earm.ecal.clus.atimeblk", &clus_a_time);
+    ch->AddBranchToCache("earm.ecal.clus.atimeblk", kTRUE);
 
-    Double_t clus_blk_atime[1000];
     Double_t clus_nblk[1000];
-    Double_t clus_eblk[1000]; 
-    ch->SetBranchAddress("earm.ecal.clus_blk.atime", &clus_blk_atime);
     ch->SetBranchAddress("earm.ecal.clus.nblk", &clus_nblk);  
-    ch->SetBranchAddress("earm.ecal.clus.eblk", &clus_eblk);
+    ch->AddBranchToCache("earm.ecal.clus.nblk", kTRUE);
 
-    Double_t goodblock_e[1000];
-    ch->SetBranchAddress("earm.ecal.goodblock.e", &goodblock_e);
-
-    TH1F *h_pi0_mass = new TH1F("h_pi0_mass", "Uncorrected #pi^{0} Invariant Mass;M_{#pi^{0}} [GeV];Events", 100, 0, 0.2);
+    TH1F *h_pi0_mass = new TH1F("h_pi0_mass", "Uncorrected #pi^{0} Invariant Mass;M_{#pi^{0}} [GeV];Events", 100, 0, 0.6);
     TH2F *h_photons_time = new TH2F("h_photons_time", "Time of photons;earm.ecal.clus.atimeblk[icl];earm.ecal.clus.atimeblk[jcl]", 100, 0, 540, 100, 0, 540);
     TH2F *h_xy = new TH2F("h_xy", "xy;earm.ecal.clus.x;earm.ecal.clus.y", 25, -1.5, 1.5, 25, -0.65, 0.6);
     TH1F *h_opening_angle = new TH1F("h_opening_angle", "Opening angle between #gamma#gamma;Angle [deg];Events", 100, 0, 30);
@@ -99,11 +104,11 @@ void pi0InvM() {
                 if (ecal_e[icl] < 0.2 || ecal_e[jcl] < 0.2) continue;
                 if (clus_nblk[icl] < 2 || clus_nblk[jcl] < 2) continue;
                 Double_t deltaR = sqrt(pow(ecal_x[icl] - ecal_x[jcl], 2) + pow(ecal_y[icl] - ecal_y[jcl], 2));
-                if (deltaR < 0.07) continue;
+                if (deltaR < 0.09) continue;
                 //if (clus_a_time[icl] < 100 || clus_a_time[icl] > 140) continue;
                 //if (clus_a_time[jcl] < 100 || clus_a_time[jcl] > 140) continue;
                 double dt = fabs(clus_a_time[icl] - clus_a_time[jcl]);
-                if (dt < best_dt && dt < 4) { // time window 
+                if (dt < best_dt && dt < 3) { // time window 
                     best_dt = dt;
                     best_icl = icl;
                     best_jcl = jcl;
@@ -142,7 +147,7 @@ void pi0InvM() {
 
             Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
             //if (opening_angle < 3) continue;
-            if (opening_angle < 3.5 || opening_angle > 8) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+            if (opening_angle < 4 || opening_angle > 7) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                     // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
             //if (pi0_mass < 0 || pi0_mass > 0.4) continue;
             h_pi0_mass->Fill(pi0_mass);
