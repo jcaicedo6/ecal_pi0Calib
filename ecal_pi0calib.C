@@ -53,12 +53,12 @@ void best_pair_cuts(
             if (ecal_e[icl] < 0.2 || ecal_e[jcl] < 0.2) continue;       // each cluster energy larger than 0.2 GeV
             if (clus_nblk[icl] < 2 || clus_nblk[jcl] < 2) continue;     // each cluster has at least 2 blocks
             Double_t deltaR = sqrt(pow(ecal_x[icl] - ecal_x[jcl], 2) + pow(ecal_y[icl] - ecal_y[jcl], 2));
-            if (deltaR < 0.07) continue;                                // distance between clusters less than 0.07 m
+            if (deltaR < 0.09) continue;                                // distance between clusters less than 0.07 m
             //pass_deltar++;
-            if (clus_a_time[icl] < 100 || clus_a_time[icl] > 140) continue;  // cluster time in the range 100-140 ns
-            if (clus_a_time[jcl] < 100 || clus_a_time[jcl] > 140) continue;  // cluster time in the range 100-140 ns
+            //if (clus_a_time[icl] <.q 100 || clus_a_time[icl] > 140) continue;  // cluster time in the range 100-140 ns
+            //if (clus_a_time[jcl] < 100 || clus_a_time[jcl] > 140) continue;  // cluster time in the range 100-140 ns
             double dt = fabs(clus_a_time[icl] - clus_a_time[jcl]);
-            if (dt < best_dt && dt < 4) { // time difference less than 4 ns between clusters
+            if (dt < best_dt && dt < 3) { // time difference less than 4 ns between clusters
                 // Update the best pair of clusters
                 best_dt = dt;
                 best_icl = icl;
@@ -81,15 +81,24 @@ void ecal_pi0calib() {
     TChain *ch = new TChain("T");
 
     //string path = "/volatile/halla/sbs/sbs-gep/GEP_REPLAYS/GEP1/LH2/prod_realign_lowcur_April28/rootfiles/";
-    string path = "/adaqfs/home/a-onl/sbs/Rootfiles/";
+    //string path = "/adaqfs/home/a-onl/sbs/Rootfiles/";
     //ifstream infile("lists_runs/runfiles_3173_to_3192.txt");
-    ifstream infile("lists_runs/runfiles_3637.txt");
+    //.qifstream infile("lists_runs/runfiles_3637.txt");
     //ifstream infile("lists_runs/runfiles_ecal.txt");
-    string filename;
 
-    while (getline(infile, filename)) {
-        ch->Add((path + filename).c_str());
-    }
+    // For all data
+    //ifstream infile("lists_runs/runfiles_3637_to_4810.txt");
+
+    //string filename;
+
+    //while (getline(infile, filename)) {
+      //  ch->Add((path + filename).c_str());
+        //ch->Add((filename).c_str());
+    //}
+    // --- Enable caching for performance ---
+    //ch->SetCacheEnabled(kTRUE); // Enable caching for the TChain
+    // For all data
+    ch->Add("/volatile/halla/sbs/jonesdc/output/reduced/rootfiles/gep5_fullreplay_nogems_*.root");
 
     // Initialize the pointers before setting the branch address
     // Define the  energy, x, y of each cluster
@@ -99,8 +108,11 @@ void ecal_pi0calib() {
 
     ch->SetBranchStatus("*", 0); // disable all Branches
     ch->SetBranchAddress("earm.ecal.clus.e", &ecal_e);
+    ch->AddBranchToCache("earm.ecal.clus.e", kTRUE);
     ch->SetBranchAddress("earm.ecal.clus.x", &ecal_x);
+    ch->AddBranchToCache("earm.ecal.clus.x", kTRUE);
     ch->SetBranchAddress("earm.ecal.clus.y", &ecal_y);
+    ch->AddBranchToCache("earm.ecal.clus.y", kTRUE);
 
     // Define the number of clusters
     Double_t nclus = 0;
@@ -109,6 +121,7 @@ void ecal_pi0calib() {
     // Define the time of each cluster
     Double_t clus_a_time[1000];
     ch->SetBranchAddress("earm.ecal.clus.atimeblk", &clus_a_time);
+    ch->AddBranchToCache("earm.ecal.clus.atimeblk", kTRUE);
 
     // Define the number of blocks in each cluster and the id of each block per cluster (max 100 blocks per cluster)
     Double_t clus_nblk[nbclusmax];       // number of blocks in the cluster
@@ -125,16 +138,25 @@ void ecal_pi0calib() {
     //Double_t energy_blk[1000];
 
     ch->SetBranchAddress("earm.ecal.clus.nblk", &clus_nblk);
+    ch->AddBranchToCache("earm.ecal.clus.nblk", kTRUE);
     ch->SetBranchAddress("earm.ecal.clus.id", &clus_id);
+    ch->AddBranchToCache("earm.ecal.clus.id", kTRUE);
     ch->SetBranchAddress("earm.ecal.clus.row", &clus_row);
+    ch->AddBranchToCache("earm.ecal.clus.row", kTRUE);
     ch->SetBranchAddress("earm.ecal.clus.col", &clus_col);
+    ch->AddBranchToCache("earm.ecal.clus.col", kTRUE);
     //ch->SetBranchAddress("earm.ecal.clus.eblk", &clus_eblk);
     //ch->SetBranchAddress("earm.ecal.idblk", &clus_idblk);
     ch->SetBranchAddress("earm.ecal.goodblock.e", &goodblock_e);
+    ch->AddBranchToCache("earm.ecal.goodblock.e", kTRUE);
     ch->SetBranchAddress("earm.ecal.goodblock.id", &goodblock_id);
+    ch->AddBranchToCache("earm.ecal.goodblock.id", kTRUE);
     ch->SetBranchAddress("earm.ecal.goodblock.col", &goodblock_col);
+    ch->AddBranchToCache("earm.ecal.goodblock.col", kTRUE);
     ch->SetBranchAddress("earm.ecal.goodblock.row", &goodblock_row);
+    ch->AddBranchToCache("earm.ecal.goodblock.row", kTRUE);
     ch->SetBranchAddress("earm.ecal.goodblock.cid", &goodblock_cid);
+    ch->AddBranchToCache("earm.ecal.goodblock.cid", kTRUE);
 
 
     Double_t ngoodADChits = 0;
@@ -153,7 +175,7 @@ void ecal_pi0calib() {
     std::set<int> blockIDs;
     std::map<int, int> blockID_to_row, blockID_to_col;
 
-    for (Long64_t i = 0; i < nEvents; ++i) {
+    for (Long64_t i = 0; i < 1000000; ++i) {
         ch->GetEntry(i);
         if (nclus < 1) continue;
         for (unsigned int b = 0; b < (unsigned int)ngoodADChits; ++b) {
@@ -174,7 +196,7 @@ void ecal_pi0calib() {
     int nlin = maxRow - minRow + 1;
     int ncol = maxCol - minCol + 1;
 
-    for (Long64_t i = 0; i < nEvents/100; ++i) {
+    /*for (Long64_t i = 0; i < nEvents/100; ++i) {
         ch->GetEntry(i);
         if (nclus < 1) continue;
         // All good blocks (only active blocks)
@@ -182,7 +204,7 @@ void ecal_pi0calib() {
             int bid = static_cast<int>(goodblock_id[b]);
             if (bid >= 0) blockIDs.insert(bid);
         }
-    }
+    }*/
 
     // Build mapping: blockID <-> matrix index
     std::map<int, int> blockID_to_idx;
@@ -249,9 +271,9 @@ void ecal_pi0calib() {
             Double_t pi0_mass = (ph1 + ph2).M();
 
             Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-            if (opening_angle < 3 || opening_angle > 9) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+            if (opening_angle < 4 || opening_angle > 7) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                     // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
-            if (pi0_mass < 0.02 || pi0_mass > 0.4) continue;
+            if (pi0_mass <= 0.02 || pi0_mass >= 0.4) continue;
             pass_mass++;
             h_pi0_mass->Fill(pi0_mass);
 
@@ -362,21 +384,7 @@ void ecal_pi0calib() {
         }
     }
     
-    // -------------------- Saving the coefficients in a text file --------------------
-    cout << "\n--- Creating the coefficient file ---" << endl;
-    cout<<"Writing coefficients to file..."<<endl;
-
-    ofstream coeff_file("calib_coeff/ecal_block_calibration_factors_noiter.txt");
-    coeff_file << "# BlockID\tCalibrationCoeff\n";
-
-    for (int i = 0; i < nblocks; i++) {
-        int blockID = idx_to_blockID[i];
-        coeff_file << blockID << "\t" << coeff[i] << endl;
-        cout << "BlockID: " << i << "\tCalibrationCoeff: " << coeff[i] << endl;
-    }
-
-    coeff_file.close();
-
+   
     // Now, with the coefficients in hand, I can use them to calibrate the Ecal energy in the code.
     // Use the coefficients to calibrate the Ecal energy and plot the pi0 invariant mass
     // with and without the correction
@@ -441,7 +449,7 @@ void ecal_pi0calib() {
             double pi0_mass_corr = (ph1_corr + ph2_corr).M();
 
             Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-            if (opening_angle < 3 || opening_angle > 9) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+            if (opening_angle < 4 || opening_angle > 7) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                     // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
 
             if (pi0_mass_corr <= 0.02 || pi0_mass_corr >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
@@ -464,6 +472,22 @@ void ecal_pi0calib() {
         }
     }
     //h_pi0_mass_corr->Reset();
+
+     // -------------------- Saving the coefficients in a text file --------------------
+    cout << "\n--- Creating the coefficient file ---" << endl;
+    cout<<"Writing coefficients to file..."<<endl;
+
+    ofstream coeff_file("calib_coeff/ecal_block_calibration_factors_noiter.txt");
+    coeff_file << "# BlockID\tCalibrationCoeff\n";
+
+    for (int i = 0; i < nblocks; i++) {
+        int blockID = idx_to_blockID[i];
+        coeff_file << blockID << "\t" << coeff[i] << endl;
+        cout << "BlockID: " << i << "\tCalibrationCoeff: " << coeff[i] << endl;
+    }
+
+    coeff_file.close();
+
 
     for (Long64_t i = 0; i < nEvents; i++) {
         ch->GetEntry(i);
@@ -517,7 +541,7 @@ void ecal_pi0calib() {
             double pi0_mass_corr = (ph1_corr + ph2_corr).M();
 
             Double_t opening_angle = dir1.Angle(dir2) * (180.0 / TMath::Pi());
-            if (opening_angle < 3 || opening_angle > 9) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
+            if (opening_angle < 4 || opening_angle > 7) continue;  // The lower cut (e.g., < 6°) removes nearly collinear photon pairs → likely merged.
                                                                     // The upper cut (e.g., > 80°) removes highly unphysical, possibly misreconstructed pairs.
 
             if (pi0_mass_corr <= 0.02 || pi0_mass_corr >= 0.4) continue;    // Making a cut on the pi0 mass, e.g., between 0.06 and 0.6 GeV
